@@ -27,5 +27,17 @@
             <groupId>org.gephi</groupId>
             <artifactId>io-importer-plugin</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.gephi</groupId>
+            <artifactId>filters-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.gephi</groupId>
+            <artifactId>filters-plugin</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.gephi</groupId>
+            <artifactId>appearance-api</artifactId>
+        </dependency>
     </dependencies>
 </project>
