@@ -8,11 +8,13 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringReader;
+import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
@@ -29,6 +31,8 @@ import org.gephi.graph.api.GraphController;
 import org.gephi.graph.api.GraphModel;
 import org.gephi.graph.api.GraphView;
 import org.gephi.graph.api.Node;
+import org.gephi.io.exporter.api.ExportController;
+import org.gephi.io.exporter.plugin.ExporterGEXF;
 import org.gephi.io.importer.api.Container;
 import org.gephi.io.importer.api.ContainerUnloader;
 import org.gephi.io.importer.api.ImportController;
@@ -36,6 +40,7 @@ import org.gephi.io.importer.plugin.file.ImporterGEXF;
 import org.gephi.io.importer.spi.FileImporter;
 import org.gephi.io.processor.plugin.DefaultProcessor;
 import org.gephi.project.api.ProjectController;
+import org.gephi.project.api.Workspace;
 import org.gephi.statistics.plugin.GraphDistance;
 import org.gephi.statistics.plugin.Modularity;
 import org.openide.util.Exceptions;
@@ -47,23 +52,65 @@ import org.openide.util.Lookup;
  */
 public class TopicDetectionFunction {
 
+    Map<Integer, Multiset<Integer>> linesAndTheirKeyTopics = new HashMap();
+    Map<Integer, Multiset<String>> topicsNumberToKeyTerms;
+    String gexfOfSemanticNetwork;
+
+    public Map<Integer, Multiset<Integer>> getLinesAndTheirKeyTopics() {
+        return linesAndTheirKeyTopics;
+    }
+
+    public Map<Integer, Multiset<String>> getTopicsNumberToKeyTerms() {
+        return topicsNumberToKeyTerms;
+    }
+
+    public String getGexfOfSemanticNetwork() {
+        return gexfOfSemanticNetwork;
+    }
+    
+    
+
     public static void main(String[] args) {
 
+        // to conduct tests
+        Path exampleGexf = Path.of("G:\\Mon Drive\\Twitch stream\\assets\\datasets\\accounts that the NYT follows\\NYT_friends_network.gexf");
+
         TopicDetectionFunction function = new TopicDetectionFunction();
-        GraphModel gm = function.loadTestGexf();
-        function.findTopicsInGexf(gm, 55);
+        GraphModel gm = function.loadTestGexf(exampleGexf);
+        function.findTopicsInGexf(gm, 70);
 
     }
 
-    public Map<Integer, Multiset<String>> analyze(TreeMap<Integer, String> mapOfLines, String selectedLanguage, Set<String> userSuppliedStopwords, boolean shouldreplaceStopwords, boolean isScientificCorpus, int precisionModularity, int maxNGrams, int minCharNumber) {
+    public void analyze(TreeMap<Integer, String> mapOfLines, String selectedLanguage, Set<String> userSuppliedStopwords, boolean shouldreplaceStopwords, boolean isScientificCorpus, int precisionModularity, int maxNGrams, int minCharNumber) {
         CowoFunction cowo = new CowoFunction();
         String gexf = cowo.analyze(mapOfLines, selectedLanguage, userSuppliedStopwords, minCharNumber, shouldreplaceStopwords, isScientificCorpus, 3, 3, "none", maxNGrams);
 
+        TreeMap<Integer, String> mapOfLinesAnalyzed = cowo.getMapOfLines();
+
         GraphModel gm = importGexfAsGraph(gexf);
 
-        Map<Integer, Multiset<String>> topics = findTopicsInGexf(gm, precisionModularity);
-        return topics;
+        topicsNumberToKeyTerms = findTopicsInGexf(gm, precisionModularity);
 
+        Set<Map.Entry<Integer, String>> entrySet = mapOfLinesAnalyzed.entrySet();
+        Iterator<Map.Entry<Integer, String>> iteratorLines = entrySet.iterator();
+        while (iteratorLines.hasNext()) {
+            Map.Entry<Integer, String> nextLine = iteratorLines.next();
+            Integer lineNumber = nextLine.getKey();
+            String line = nextLine.getValue();
+            Iterator<Map.Entry<Integer, Multiset<String>>> iteratorTopics = topicsNumberToKeyTerms.entrySet().iterator();
+            while (iteratorTopics.hasNext()) {
+                Map.Entry<Integer, Multiset<String>> nextTopic = iteratorTopics.next();
+                Integer topicNumber = nextTopic.getKey();
+                Multiset<String> keywords = nextTopic.getValue();
+                for (String keyword : keywords.getElementSet()) {
+                    if (line.contains(keyword)) {
+                        Multiset<Integer> keyTopicsForThisLine = linesAndTheirKeyTopics.getOrDefault(lineNumber, new Multiset<>());
+                        keyTopicsForThisLine.addSeveral(topicNumber, keywords.getCount(keyword));
+                        linesAndTheirKeyTopics.put(lineNumber, keyTopicsForThisLine);
+                    }
+                }
+            }
+        }
     }
 
     public Map<Integer, Multiset<String>> findTopicsInGexf(GraphModel gm, int precisionModularity) {
@@ -75,7 +122,7 @@ public class TopicDetectionFunction {
         Modularity modularity = new Modularity();
         modularity.setUseWeight(true);
         modularity.setRandom(false);
-        GraphModel graphModel = Lookup.getDefault().lookup(GraphController.class).getGraphModel();
+
         AppearanceModel appearanceModel = Lookup.getDefault().lookup(AppearanceController.class).getModel();
         FilterController filterController = Lookup.getDefault().lookup(FilterController.class);
 
@@ -88,38 +135,52 @@ public class TopicDetectionFunction {
         modularity.setResolution(resolution);
         modularity.execute(graph);
 
+        ProjectController pc = Lookup.getDefault().lookup(ProjectController.class);
+        Workspace currentWorkspace = pc.getCurrentWorkspace();
+
+        ExportController ec = Lookup.getDefault().lookup(ExportController.class);
+        ExporterGEXF exporterGexf = (ExporterGEXF) ec.getExporter("gexf");
+        exporterGexf.setWorkspace(currentWorkspace);
+        exporterGexf.setExportDynamic(false);
+        exporterGexf.setExportPosition(false);
+        exporterGexf.setExportSize(false);
+        exporterGexf.setExportColors(false);
+
+        StringWriter stringWriter = new StringWriter();
+        ec.exportWriter(stringWriter, exporterGexf);
+        try {
+            stringWriter.close();
+        } catch (IOException ex) {
+            Exceptions.printStackTrace(ex);
+        }
+        gexfOfSemanticNetwork = stringWriter.toString();
+
         NodePartitionFilter partitionFilter = new NodePartitionFilter(appearanceModel, appearanceModel.getNodePartition(gm.getNodeTable().getColumn(Modularity.MODULARITY_CLASS)));
         partitionFilter.unselectAll();
         Collection values = partitionFilter.getPartition().getValues(graph);
         for (Object value : values) {
-            System.out.println("partition: " + value);
-        }
-        for (Object value : values) {
+            Integer communityNumber = (Integer) value;
             partitionFilter.addPart(value);
             Query query = filterController.createQuery(partitionFilter);
             GraphView view = filterController.filter(query);
             gm.setVisibleView(view);
             GraphDistance distance = new GraphDistance();
             distance.setDirected(true);
+            distance.setNormalized(true);
             distance.execute(gm.getGraphVisible());
             Column centralityColumn = gm.getNodeTable().getColumn(GraphDistance.BETWEENNESS);
-            double maxCentrality = 0d;
             for (Node node : gm.getGraphVisible().getNodes().toArray()) {
                 double centrality = (double) node.getAttribute(centralityColumn);
-                System.out.println("centrality: " + centrality);
+                double biggerCentrality = centrality * 1_000_000;
+                int centralityRounded = Long.valueOf(Math.round(biggerCentrality)).intValue();
+                if (!communitiesResult.containsKey(communityNumber)) {
+                    communitiesResult.put(communityNumber, new Multiset());
+                }
+                Multiset<String> termsInCommunity = communitiesResult.get(communityNumber);
+                termsInCommunity.addSeveral(node.getLabel(), (Integer) centralityRounded);
+                communitiesResult.put(communityNumber, termsInCommunity);
             }
             partitionFilter.unselectAll();
-        }
-
-//finding topics
-        for (Node next : graph.getNodes()) {
-            Integer v = (Integer) next.getAttribute(Modularity.MODULARITY_CLASS);
-            if (!communitiesResult.containsKey(v)) {
-                communitiesResult.put(v, new Multiset());
-            }
-            Multiset<String> termsInCommunity = communitiesResult.get(v);
-            termsInCommunity.addSeveral(next.getLabel(), (Integer) next.getAttribute("countTerms"));
-            communitiesResult.put(v, termsInCommunity);
         }
         return communitiesResult;
     }
@@ -151,10 +212,9 @@ public class TopicDetectionFunction {
 
     }
 
-    private GraphModel loadTestGexf() {
+    private GraphModel loadTestGexf(Path exampleGexf) {
         GraphModel gm = null;
         try {
-            Path exampleGexf = Path.of("G:\\Mon Drive\\Twitch stream\\assets\\datasets\\accounts that the NYT follows\\NYT_friends_network.gexf");
 
             String gexfFileAsString = Files.readString(exampleGexf, StandardCharsets.UTF_8);
 
@@ -180,18 +240,6 @@ public class TopicDetectionFunction {
 
             GraphController graphController = Lookup.getDefault().lookup(GraphController.class);
             gm = graphController.getGraphModel();
-
-            Map<Integer, Multiset<String>> communitiesResult = new HashMap();
-
-
-            AppearanceModel appearanceModel = Lookup.getDefault().lookup(AppearanceController.class).getModel();
-            FilterController filterController = Lookup.getDefault().lookup(FilterController.class);
-            System.out.println("ddd");
-            Graph graph = gm.getGraph();
-
-            Modularity modularity = new Modularity();
-            modularity.setUseWeight(true);
-            modularity.setRandom(false);
 
         } catch (IOException ex) {
             Exceptions.printStackTrace(ex);
