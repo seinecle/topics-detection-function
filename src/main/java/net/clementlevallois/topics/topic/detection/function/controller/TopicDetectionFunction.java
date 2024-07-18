@@ -55,6 +55,11 @@ public class TopicDetectionFunction {
     Map<Integer, Multiset<Integer>> linesAndTheirKeyTopics = new HashMap();
     Map<Integer, Multiset<String>> topicsNumberToKeyTerms;
     String gexfOfSemanticNetwork;
+    boolean removeAccents = false;
+    private String sessionId = "";
+    private String callbackURL = "";
+    private String dataPersistenceId = "";
+    private boolean messagesEnabled = false;
 
     public Map<Integer, Multiset<Integer>> getLinesAndTheirKeyTopics() {
         return linesAndTheirKeyTopics;
@@ -67,8 +72,10 @@ public class TopicDetectionFunction {
     public String getGexfOfSemanticNetwork() {
         return gexfOfSemanticNetwork;
     }
-    
-    
+
+    public void setRemoveAccents(boolean removeAccents) {
+        this.removeAccents = removeAccents;
+    }
 
     public static void main(String[] args) {
 
@@ -78,25 +85,34 @@ public class TopicDetectionFunction {
         TopicDetectionFunction function = new TopicDetectionFunction();
         GraphModel gm = function.loadTestGexf(exampleGexf);
         function.findTopicsInGexf(gm, 70);
-
     }
+    
+    public void setSessionIdAndCallbackURL(String sessionId, String callbackURL, String dataPersistenceId) {
+        this.sessionId = sessionId;
+        this.callbackURL = callbackURL;
+        this.dataPersistenceId = dataPersistenceId;
+        messagesEnabled = true;
+    }
+    
 
-    public void analyze(TreeMap<Integer, String> mapOfLines, String selectedLanguage, Set<String> userSuppliedStopwords, boolean shouldreplaceStopwords, boolean isScientificCorpus, int precisionModularity, int maxNGrams, int minCharNumber) {
+    public void analyze(TreeMap<Integer, String> mapOfLines, String selectedLanguage, Set<String> userSuppliedStopwords, boolean shouldreplaceStopwords, boolean isScientificCorpus, int precisionModularity, int maxNGrams, int minCharNumber, int minTermFreq, boolean lemmatize) {
         CowoFunction cowo = new CowoFunction();
-        String gexf = cowo.analyze(mapOfLines, selectedLanguage, userSuppliedStopwords, minCharNumber, shouldreplaceStopwords, isScientificCorpus, 3, 3, "none", maxNGrams);
-
-        TreeMap<Integer, String> mapOfLinesAnalyzed = cowo.getMapOfLines();
+        cowo.setFlattenToAScii(removeAccents);
+        if (messagesEnabled){
+            cowo.setSessionIdAndCallbackURL(sessionId, callbackURL, dataPersistenceId);
+        }
+        String gexf = cowo.analyze(mapOfLines, selectedLanguage, userSuppliedStopwords, minCharNumber, shouldreplaceStopwords, isScientificCorpus, false, 3, minTermFreq, "none", maxNGrams, lemmatize);
 
         GraphModel gm = importGexfAsGraph(gexf);
 
         topicsNumberToKeyTerms = findTopicsInGexf(gm, precisionModularity);
 
-        Set<Map.Entry<Integer, String>> entrySet = mapOfLinesAnalyzed.entrySet();
+        Set<Map.Entry<Integer, String>> entrySet = mapOfLines.entrySet();
         Iterator<Map.Entry<Integer, String>> iteratorLines = entrySet.iterator();
         while (iteratorLines.hasNext()) {
             Map.Entry<Integer, String> nextLine = iteratorLines.next();
             Integer lineNumber = nextLine.getKey();
-            String line = nextLine.getValue();
+            String line = nextLine.getValue().toLowerCase();
             Iterator<Map.Entry<Integer, Multiset<String>>> iteratorTopics = topicsNumberToKeyTerms.entrySet().iterator();
             while (iteratorTopics.hasNext()) {
                 Map.Entry<Integer, Multiset<String>> nextTopic = iteratorTopics.next();

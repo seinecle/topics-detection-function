@@ -19,5 +19,9 @@
             <groupId>org.gephi</groupId>
             <artifactId>gephi-toolkit</artifactId>
         </dependency>
+        <dependency>
+            <groupId>net.clementlevallois.utils</groupId>
+            <artifactId>utils-core</artifactId>
+        </dependency>
     </dependencies>
 </project>
