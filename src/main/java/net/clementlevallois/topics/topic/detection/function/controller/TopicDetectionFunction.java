@@ -1,7 +1,3 @@
-/*
- * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
- * Click nbfs://nbhost/SystemFileSystem/Templates/Project/Maven2/JavaApp/src/main/java/${packagePath}/${mainClassName}.java to edit this template
- */
 package net.clementlevallois.topics.topic.detection.function.controller;
 
 import java.io.ByteArrayInputStream;
@@ -101,7 +97,7 @@ public class TopicDetectionFunction {
         if (messagesEnabled){
             cowo.setSessionIdAndCallbackURL(sessionId, callbackURL, dataPersistenceId);
         }
-        String gexf = cowo.analyze(mapOfLines, selectedLanguage, userSuppliedStopwords, minCharNumber, shouldreplaceStopwords, isScientificCorpus, false, 3, minTermFreq, "none", maxNGrams, lemmatize);
+        String gexf = cowo.analyze(mapOfLines, selectedLanguage, userSuppliedStopwords, minCharNumber, shouldreplaceStopwords, isScientificCorpus, false, false, 3, minTermFreq, "none", maxNGrams, lemmatize);
 
         GraphModel gm = importGexfAsGraph(gexf);
 

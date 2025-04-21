@@ -6,7 +6,7 @@
         <artifactId>parentbuild</artifactId>
         <version>1.0</version>
     </parent>   
-    <artifactId>topic-detection-function</artifactId>
+    <artifactId>topic-detection</artifactId>
     <version>1.0</version>
     <packaging>jar</packaging>
     <dependencies>
