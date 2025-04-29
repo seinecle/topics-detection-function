@@ -14,6 +14,8 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.StructuredTaskScope;
 import net.clementlevallois.cowo.controller.CowoFunction;
 import net.clementlevallois.utils.Multiset;
 import org.gephi.appearance.api.AppearanceController;
@@ -48,7 +50,7 @@ import org.openide.util.Lookup;
  */
 public class TopicDetectionFunction {
 
-    Map<Integer, Multiset<Integer>> linesAndTheirKeyTopics = new HashMap();
+    final Map<Integer, Multiset<Integer>> linesAndTheirKeyTopics = new HashMap();
     Map<Integer, Multiset<String>> topicsNumberToKeyTerms;
     String gexfOfSemanticNetwork;
     boolean removeAccents = false;
@@ -82,19 +84,18 @@ public class TopicDetectionFunction {
         GraphModel gm = function.loadTestGexf(exampleGexf);
         function.findTopicsInGexf(gm, 70);
     }
-    
+
     public void setSessionIdAndCallbackURL(String sessionId, String callbackURL, String dataPersistenceId) {
         this.sessionId = sessionId;
         this.callbackURL = callbackURL;
         this.dataPersistenceId = dataPersistenceId;
         messagesEnabled = true;
     }
-    
 
     public void analyze(TreeMap<Integer, String> mapOfLines, String selectedLanguage, Set<String> userSuppliedStopwords, boolean shouldreplaceStopwords, boolean isScientificCorpus, int precisionModularity, int maxNGrams, int minCharNumber, int minTermFreq, boolean lemmatize) {
         CowoFunction cowo = new CowoFunction();
         cowo.setFlattenToAScii(removeAccents);
-        if (messagesEnabled){
+        if (messagesEnabled) {
             cowo.setSessionIdAndCallbackURL(sessionId, callbackURL, dataPersistenceId);
         }
         String gexf = cowo.analyze(mapOfLines, selectedLanguage, userSuppliedStopwords, minCharNumber, shouldreplaceStopwords, isScientificCorpus, false, false, 3, minTermFreq, "none", maxNGrams, lemmatize);
@@ -103,25 +104,31 @@ public class TopicDetectionFunction {
 
         topicsNumberToKeyTerms = findTopicsInGexf(gm, precisionModularity);
 
-        Set<Map.Entry<Integer, String>> entrySet = mapOfLines.entrySet();
-        Iterator<Map.Entry<Integer, String>> iteratorLines = entrySet.iterator();
-        while (iteratorLines.hasNext()) {
-            Map.Entry<Integer, String> nextLine = iteratorLines.next();
-            Integer lineNumber = nextLine.getKey();
-            String line = nextLine.getValue().toLowerCase();
-            Iterator<Map.Entry<Integer, Multiset<String>>> iteratorTopics = topicsNumberToKeyTerms.entrySet().iterator();
-            while (iteratorTopics.hasNext()) {
-                Map.Entry<Integer, Multiset<String>> nextTopic = iteratorTopics.next();
-                Integer topicNumber = nextTopic.getKey();
-                Multiset<String> keywords = nextTopic.getValue();
-                for (String keyword : keywords.getElementSet()) {
-                    if (line.contains(keyword)) {
-                        Multiset<Integer> keyTopicsForThisLine = linesAndTheirKeyTopics.getOrDefault(lineNumber, new Multiset<>());
-                        keyTopicsForThisLine.addSeveral(topicNumber, keywords.getCount(keyword));
+        try (var scope = new StructuredTaskScope.ShutdownOnFailure()) {
+            for (Map.Entry<Integer, String> nextLine : mapOfLines.entrySet()) {
+                scope.fork(() -> {
+                    Integer lineNumber = nextLine.getKey();
+                    String line = nextLine.getValue().toLowerCase();
+                    Multiset<Integer> keyTopicsForThisLine = new Multiset<>();
+                    for (Map.Entry<Integer, Multiset<String>> nextTopic : topicsNumberToKeyTerms.entrySet()) {
+                        Integer topicNumber = nextTopic.getKey();
+                        Multiset<String> keywords = nextTopic.getValue();
+                        for (String keyword : keywords.getElementSet()) {
+                            if (line.contains(keyword)) {
+                                keyTopicsForThisLine.addSeveral(topicNumber, keywords.getCount(keyword));
+                            }
+                        }
+                    }
+                    synchronized (linesAndTheirKeyTopics) {
                         linesAndTheirKeyTopics.put(lineNumber, keyTopicsForThisLine);
                     }
-                }
+                    return null;
+                });
             }
+            scope.join();
+            scope.throwIfFailed();
+        } catch (InterruptedException | ExecutionException ex) {
+            Exceptions.printStackTrace(ex);
         }
     }
 
@@ -257,6 +264,5 @@ public class TopicDetectionFunction {
             Exceptions.printStackTrace(ex);
         }
         return gm;
-
     }
 }
